@@ -107,6 +107,12 @@ RSpec.describe Langfuse::OpenAI do
       expect(traced_client.models).to eq({ data: [] })
     end
     
+    it "calls the chat method with parameters" do
+      params = { model: "gpt-3.5-turbo", messages: [{ role: "user", content: "Hello" }] }
+      expect(mock_client).to receive(:chat).with(parameters: params).and_return({ choices: [] })
+      traced_client.chat(parameters: params)
+    end
+    
     it "checks method existence on the original client" do
       expect(mock_client).to receive(:respond_to?).with(:models, false).and_return(true)
       expect(traced_client.respond_to?(:models)).to be true

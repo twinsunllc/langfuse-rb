@@ -21,5 +21,9 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "faraday", "~> 2.0"
-  spec.add_dependency "ruby-openai", "~> 6.0"
+  spec.add_dependency "ruby-openai", "~> 7.0"
+
+  # Explicitly specify the main entry point file
+  spec.bindir = "bin"
+  spec.executables = spec.files.grep(%r{^bin/}) { |f| File.basename(f) }
 end

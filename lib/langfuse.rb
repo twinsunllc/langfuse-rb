@@ -1,7 +1,3 @@
-require_relative 'langfuse/version'
-require_relative 'langfuse/core'
-require_relative 'langfuse/openai'
-
 # Make sure these are loaded and available
 require 'faraday'
 require 'json'
@@ -9,8 +5,15 @@ require 'securerandom'
 require 'logger'
 require 'singleton'
 
+# Load version first
+require_relative 'langfuse/version'
+
 module Langfuse
   class Error < StandardError; end
+  
+  # Load all components within the module scope
+  require_relative 'langfuse/core'
+  require_relative 'langfuse/openai'
   
   # Create a new Langfuse client instance
   # @param public_key [String] Langfuse public key
