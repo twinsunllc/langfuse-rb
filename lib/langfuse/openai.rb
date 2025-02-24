@@ -233,7 +233,7 @@ module Langfuse
           )
 
           # Update the trace if not using a parent trace
-          trace.update(output: output) unless @config[:parent_trace]
+          trace.update(metadata: { output: output }) unless @config[:parent_trace]
 
           response
 
