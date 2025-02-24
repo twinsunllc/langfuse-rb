@@ -76,7 +76,7 @@ module Langfuse
       event = {
         type: type,
         body: body,
-        timestamp: Time.now.utc.iso8601
+        timestamp: Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ')
       }
       
       @mutex.synchronize do

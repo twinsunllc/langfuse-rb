@@ -2,6 +2,13 @@ require_relative 'langfuse/version'
 require_relative 'langfuse/core'
 require_relative 'langfuse/openai'
 
+# Make sure these are loaded and available
+require 'faraday'
+require 'json'
+require 'securerandom'
+require 'logger'
+require 'singleton'
+
 module Langfuse
   class Error < StandardError; end
   

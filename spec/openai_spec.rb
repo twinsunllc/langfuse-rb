@@ -108,7 +108,7 @@ RSpec.describe Langfuse::OpenAI do
     end
     
     it "checks method existence on the original client" do
-      expect(mock_client).to receive(:respond_to?).with(:models).and_return(true)
+      expect(mock_client).to receive(:respond_to?).with(:models, false).and_return(true)
       expect(traced_client.respond_to?(:models)).to be true
     end
   end
