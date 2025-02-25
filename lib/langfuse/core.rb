@@ -4,6 +4,21 @@ require 'securerandom'
 require 'logger'
 
 module Langfuse
+  # Helper method to format timestamps consistently throughout the library
+  def self.format_timestamp(time)
+    return Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') if time.nil?
+    
+    case time
+    when Time
+      time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ')
+    when String
+      # Return as-is if it's already a formatted string
+      time
+    else
+      time.to_s
+    end
+  end
+
   class Core
     attr_reader :options, :queue, :client
 
@@ -59,7 +74,7 @@ module Langfuse
         session_id: session_id,
         metadata: metadata,
         tags: tags,
-        timestamp: Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ')
+        timestamp: Langfuse.format_timestamp(Time.now)
       })
     end
 
@@ -211,8 +226,8 @@ module Langfuse
         model: model,
         input: input,
         output: output,
-        start_time: start_time ? start_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
-        end_time: end_time ? end_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : nil,
+        start_time: Langfuse.format_timestamp(start_time),
+        end_time: end_time ? Langfuse.format_timestamp(end_time) : nil,
         usage: usage,
         metadata: metadata
       }.compact
@@ -235,8 +250,8 @@ module Langfuse
         id: id,
         trace_id: @id,
         name: name,
-        start_time: start_time ? start_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
-        end_time: end_time ? end_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : nil,
+        start_time: Langfuse.format_timestamp(start_time),
+        end_time: end_time ? Langfuse.format_timestamp(end_time) : nil,
         metadata: metadata
       }.compact
 
@@ -294,7 +309,7 @@ module Langfuse
       update_data = {
         id: @id,
         output: output,
-        end_time: end_time ? end_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
+        end_time: Langfuse.format_timestamp(end_time || Time.now),
         usage: usage,
         metadata: metadata
       }.compact
@@ -329,7 +344,7 @@ module Langfuse
     def update(end_time: nil, metadata: nil)
       update_data = {
         id: @id,
-        end_time: end_time ? end_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
+        end_time: Langfuse.format_timestamp(end_time || Time.now),
         metadata: metadata
       }.compact
 
