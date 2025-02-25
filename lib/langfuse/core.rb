@@ -185,7 +185,7 @@ module Langfuse
       @name = data[:name]
       
       # Queue the trace creation
-      @client.enqueue('trace', @data)
+      @client.enqueue('trace-create', @data)
     end
     
     # Add a generation to this trace
@@ -214,7 +214,7 @@ module Langfuse
         metadata: metadata
       }.compact
       
-      @client.enqueue('generation', gen_data)
+      @client.enqueue('generation-create', gen_data)
       
       Generation.new(@client, gen_data)
     end
@@ -237,7 +237,7 @@ module Langfuse
         metadata: metadata
       }.compact
       
-      @client.enqueue('span', span_data)
+      @client.enqueue('span-create', span_data)
       
       Span.new(@client, span_data)
     end
@@ -259,7 +259,8 @@ module Langfuse
       
       return self if update_data.keys.size <= 1 # Only id is present
       
-      @client.enqueue('update-trace', update_data)
+      # Uses trace-create for updates too, with just the fields that changed
+      @client.enqueue('trace-create', update_data)
       @data.merge!(update_data)
       
       self
@@ -297,7 +298,7 @@ module Langfuse
       
       return self if update_data.keys.size <= 1 # Only id is present
       
-      @client.enqueue('update-generation', update_data)
+      @client.enqueue('generation-update', update_data)
       @data.merge!(update_data)
       
       self
@@ -331,7 +332,7 @@ module Langfuse
       
       return self if update_data.keys.size <= 1 # Only id is present
       
-      @client.enqueue('update-span', update_data)
+      @client.enqueue('span-update', update_data)
       @data.merge!(update_data)
       
       self
