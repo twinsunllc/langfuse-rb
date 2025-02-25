@@ -226,8 +226,8 @@ module Langfuse
             model: parsed_args[:model],
             input: parsed_args[:input],
             output: output,
-            start_time: start_time,
-            end_time: Time.now,
+            start_time: start_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
+            end_time: Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
             usage: usage,
             metadata: { parameters: parsed_args[:model_parameters] }
           )
@@ -243,8 +243,8 @@ module Langfuse
             name: generation_name,
             model: parsed_args[:model],
             input: parsed_args[:input],
-            start_time: start_time,
-            end_time: Time.now,
+            start_time: start_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
+            end_time: Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
             metadata: {
               parameters: parsed_args[:model_parameters],
               error: e.message,

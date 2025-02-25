@@ -16,7 +16,7 @@ module Langfuse
       @public_key = public_key
       @secret_key = secret_key
       @host = host.chomp('/')
-      
+
       @options = {
         flush_at: options[:flush_at] || 10,
         flush_interval: options[:flush_interval] || 60,
@@ -59,7 +59,7 @@ module Langfuse
         session_id: session_id,
         metadata: metadata,
         tags: tags,
-        timestamp: Time.now
+        timestamp: Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ')
       })
     end
 
@@ -69,21 +69,21 @@ module Langfuse
     # @return [Boolean] Whether the event was queued
     def enqueue(type, body)
       return false unless @options[:enabled]
-      
+
       # Apply sampling
       return false if @options[:sample_rate] < 1.0 && rand > @options[:sample_rate]
-      
+
       event = {
+        id: SecureRandom.uuid,  # Add required id for the event itself
         type: type,
-        body: body,
-        timestamp: Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ')
+        body: body
       }
-      
+
       @mutex.synchronize do
         @queue << event
         flush if @queue.size >= @options[:flush_at]
       end
-      
+
       true
     end
 
@@ -91,22 +91,25 @@ module Langfuse
     # @return [Boolean] Whether the flush was successful
     def flush
       return true if @queue.empty?
-      
+
       events = nil
       @mutex.synchronize do
         events = @queue.dup
         @queue.clear
       end
-      
+
       return true if events.empty?
-      
+
       begin
         response = @client.post('/api/public/ingestion') do |req|
           req.headers.merge!(@options[:additional_headers])
           req.body = { batch: events }
           req.options.timeout = 10
         end
-        
+
+        @options[:logger].debug("Langfuse: Response status: #{response.status}")
+        @options[:logger].debug("Langfuse: Response body: #{response.body}")
+
         if response.success?
           @options[:logger].debug("Langfuse: Successfully sent #{events.size} events")
           return true
@@ -123,22 +126,22 @@ module Langfuse
         return false
       end
     end
-    
+
     # Flush the queue and wait for it to complete
     # @return [Boolean] Whether the flush was successful
     def flush_async
       flush
     end
-    
+
     # Flush and shutdown the client
     # @return [Boolean] Whether the shutdown was successful
     def shutdown
       stop_flush_timer
       flush
     end
-    
+
     private
-    
+
     # Start the flush timer
     def start_flush_timer
       @timer = Thread.new do
@@ -148,20 +151,20 @@ module Langfuse
         end
       end
     end
-    
+
     # Stop the flush timer
     def stop_flush_timer
       @timer&.kill
       @timer = nil
     end
-    
+
     # Determine if a status code is retryable
     # @param status [Integer] HTTP status code
     # @return [Boolean] Whether the status is retryable
     def retryable_status?(status)
       status >= 500 || status == 429
     end
-    
+
     # Re-queue events after a failed request
     # @param events [Array] Events to re-queue
     def requeue_events(events)
@@ -170,11 +173,11 @@ module Langfuse
       end
     end
   end
-  
+
   # Represents a trace in Langfuse
   class Trace
     attr_reader :id, :name, :client, :data
-    
+
     # Initialize a new trace
     # @param client [Langfuse::Core] Langfuse client
     # @param data [Hash] Trace data
@@ -183,11 +186,11 @@ module Langfuse
       @data = data
       @id = data[:id]
       @name = data[:name]
-      
+
       # Queue the trace creation
       @client.enqueue('trace-create', @data)
     end
-    
+
     # Add a generation to this trace
     # @param model [String] Model name
     # @param input [Hash|String] Input data
@@ -200,7 +203,7 @@ module Langfuse
     # @return [Generation] The created generation
     def generation(model:, input:, output: nil, name: nil, start_time: nil, end_time: nil, usage: nil, metadata: nil)
       id = SecureRandom.uuid
-      
+
       gen_data = {
         id: id,
         trace_id: @id,
@@ -208,17 +211,17 @@ module Langfuse
         model: model,
         input: input,
         output: output,
-        start_time: start_time || Time.now,
-        end_time: end_time,
+        start_time: start_time ? start_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
+        end_time: end_time ? end_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : nil,
         usage: usage,
         metadata: metadata
       }.compact
-      
+
       @client.enqueue('generation-create', gen_data)
-      
+
       Generation.new(@client, gen_data)
     end
-    
+
     # Add a span to this trace
     # @param name [String] Name of the span
     # @param start_time [Time] Optional start time
@@ -227,21 +230,21 @@ module Langfuse
     # @return [Span] The created span
     def span(name:, start_time: nil, end_time: nil, metadata: nil)
       id = SecureRandom.uuid
-      
+
       span_data = {
         id: id,
         trace_id: @id,
         name: name,
-        start_time: start_time || Time.now,
-        end_time: end_time,
+        start_time: start_time ? start_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
+        end_time: end_time ? end_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : nil,
         metadata: metadata
       }.compact
-      
+
       @client.enqueue('span-create', span_data)
-      
+
       Span.new(@client, span_data)
     end
-    
+
     # Update this trace
     # @param user_id [String] Optional user ID
     # @param session_id [String] Optional session ID
@@ -256,21 +259,21 @@ module Langfuse
         metadata: metadata,
         tags: tags
       }.compact
-      
+
       return self if update_data.keys.size <= 1 # Only id is present
-      
+
       # Uses trace-create for updates too, with just the fields that changed
       @client.enqueue('trace-create', update_data)
       @data.merge!(update_data)
-      
+
       self
     end
   end
-  
+
   # Represents a generation in Langfuse
   class Generation
     attr_reader :id, :trace_id, :client, :data
-    
+
     # Initialize a new generation
     # @param client [Langfuse::Core] Langfuse client
     # @param data [Hash] Generation data
@@ -280,7 +283,7 @@ module Langfuse
       @id = data[:id]
       @trace_id = data[:trace_id]
     end
-    
+
     # Update this generation
     # @param output [String|Hash] Optional output data
     # @param end_time [Time] Optional end time
@@ -291,24 +294,24 @@ module Langfuse
       update_data = {
         id: @id,
         output: output,
-        end_time: end_time || Time.now,
+        end_time: end_time ? end_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
         usage: usage,
         metadata: metadata
       }.compact
-      
+
       return self if update_data.keys.size <= 1 # Only id is present
-      
+
       @client.enqueue('generation-update', update_data)
       @data.merge!(update_data)
-      
+
       self
     end
   end
-  
+
   # Represents a span in Langfuse
   class Span
     attr_reader :id, :trace_id, :client, :data
-    
+
     # Initialize a new span
     # @param client [Langfuse::Core] Langfuse client
     # @param data [Hash] Span data
@@ -318,7 +321,7 @@ module Langfuse
       @id = data[:id]
       @trace_id = data[:trace_id]
     end
-    
+
     # Update this span
     # @param end_time [Time] Optional end time
     # @param metadata [Hash] Optional metadata
@@ -326,15 +329,15 @@ module Langfuse
     def update(end_time: nil, metadata: nil)
       update_data = {
         id: @id,
-        end_time: end_time || Time.now,
+        end_time: end_time ? end_time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') : Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ'),
         metadata: metadata
       }.compact
-      
+
       return self if update_data.keys.size <= 1 # Only id is present
-      
+
       @client.enqueue('span-update', update_data)
       @data.merge!(update_data)
-      
+
       self
     end
   end
