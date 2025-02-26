@@ -7,26 +7,33 @@ langfuse = Langfuse.new(
   host: ENV['LANGFUSE_HOST'] || 'https://cloud.langfuse.com'
 )
 
-# Create a trace
+# Define the input data
+input_data = {
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user", content: "Tell me a joke about programming." }
+  ]
+}
+
+# Define the output data
+output_data = "Why do programmers prefer dark mode? Because light attracts bugs!"
+
+# Create a trace with input
 trace = langfuse.trace(
   name: "Example Trace",
   user_id: "user-123",
   metadata: { source: "ruby-example" },
   version: "1.0.0",
-  release: "2023-02-26"
+  release: "2023-02-26",
+  input: input_data
 )
 
 # Add a generation to the trace
 generation = trace.generation(
   name: "Example Generation",
   model: "gpt-3.5-turbo",
-  input: {
-    messages: [
-      { role: "system", content: "You are a helpful assistant." },
-      { role: "user", content: "Tell me a joke about programming." }
-    ]
-  },
-  output: "Why do programmers prefer dark mode? Because light attracts bugs!",
+  input: input_data,
+  output: output_data,
   usage: {
     input: 35,
     output: 15,
@@ -64,8 +71,16 @@ span.update(
 # Add an event to the trace
 trace.event(
   name: "Process Completed",
-  level: Langfuse::ObservationLevel::INFO,
+  level: Langfuse::ObservationLevel::DEFAULT,
   metadata: { duration_ms: 500 }
+)
+
+# Update the trace with the output
+trace.update(
+  output: {
+    joke: output_data,
+    processing_result: { processed_items: 1000 }
+  }
 )
 
 # Make sure to flush before the program ends

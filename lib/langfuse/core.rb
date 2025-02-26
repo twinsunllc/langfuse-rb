@@ -83,8 +83,11 @@ module Langfuse
     # @param version [String] Optional version
     # @param release [String] Optional release
     # @param public_trace [Boolean] Optional public flag
+    # @param input [Hash|String] Optional input data
+    # @param output [Hash|String] Optional output data
     # @return [Trace] A new trace object
-    def trace(name:, id: nil, user_id: nil, session_id: nil, metadata: nil, tags: nil, version: nil, release: nil, public_trace: nil)
+    def trace(name:, id: nil, user_id: nil, session_id: nil, metadata: nil, tags: nil,
+             version: nil, release: nil, public_trace: nil, input: nil, output: nil)
       Trace.new(self, {
         id: id || SecureRandom.uuid,
         name: name,
@@ -95,6 +98,8 @@ module Langfuse
         version: version,
         release: release,
         public: public_trace,
+        input: input,
+        output: output,
         timestamp: Langfuse.format_timestamp(Time.now)
       })
     end
@@ -358,8 +363,11 @@ module Langfuse
     # @param version [String] Optional version
     # @param release [String] Optional release
     # @param public_trace [Boolean] Optional public flag
+    # @param input [Hash|String] Optional input data
+    # @param output [Hash|String] Optional output data
     # @return [Trace] Self
-    def update(user_id: nil, session_id: nil, metadata: nil, tags: nil, version: nil, release: nil, public_trace: nil)
+    def update(user_id: nil, session_id: nil, metadata: nil, tags: nil,
+              version: nil, release: nil, public_trace: nil, input: nil, output: nil)
       update_data = {
         id: @id,
         userId: user_id,
@@ -368,7 +376,9 @@ module Langfuse
         tags: tags,
         version: version,
         release: release,
-        public: public_trace
+        public: public_trace,
+        input: input,
+        output: output
       }.compact
 
       return self if update_data.keys.size <= 1 # Only id is present

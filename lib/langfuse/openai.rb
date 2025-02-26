@@ -78,14 +78,24 @@ module Langfuse
 
     # Helper to parse completion output
     # @param response [Hash] OpenAI API response
-    # @return [String] Completion text
+    # @return [String|Hash] Completion text or message object
     def self.parse_completion_output(response)
-      return "" unless response.is_a?(Hash) && response.key?(:choices) && response[:choices].is_a?(Array)
+      return "" unless response.is_a?(Hash)
 
-      if response[:choices][0].key?(:message)
-        response[:choices][0][:message]
+      # Check for choices key (handling both string and symbol keys)
+      choices = response[:choices] || response['choices']
+      return "" unless choices.is_a?(Array) && !choices.empty?
+
+      choice = choices[0]
+
+      # For chat completions, return the full message object (handling both string and symbol keys)
+      if choice.key?(:message) || choice.key?('message')
+        choice[:message] || choice['message']
+      # For text completions, return the text (handling both string and symbol keys)
+      elsif choice.key?(:text) || choice.key?('text')
+        choice[:text] || choice['text']
       else
-        response[:choices][0][:text] || ""
+        ""
       end
     end
 
@@ -93,13 +103,16 @@ module Langfuse
     # @param response [Hash] OpenAI API response
     # @return [Hash, nil] Usage statistics if available
     def self.parse_usage(response)
-      return nil unless response.is_a?(Hash) && response.key?(:usage)
+      return nil unless response.is_a?(Hash)
 
-      usage = response[:usage]
+      # Check for usage key (handling both string and symbol keys)
+      usage = response[:usage] || response['usage']
+      return nil unless usage
+
       {
-        input: usage[:prompt_tokens],
-        output: usage[:completion_tokens],
-        total: usage[:total_tokens]
+        input: usage[:prompt_tokens] || usage['prompt_tokens'],
+        output: usage[:completion_tokens] || usage['completion_tokens'],
+        total: usage[:total_tokens] || usage['total_tokens']
       }
     end
 
@@ -107,13 +120,16 @@ module Langfuse
     # @param response [Hash] OpenAI API response
     # @return [Hash, nil] Usage details if available
     def self.parse_usage_details(response)
-      return nil unless response.is_a?(Hash) && response.key?(:usage)
+      return nil unless response.is_a?(Hash)
 
-      usage = response[:usage]
+      # Check for usage key (handling both string and symbol keys)
+      usage = response[:usage] || response['usage']
+      return nil unless usage
+
       {
-        prompt_tokens: usage[:prompt_tokens],
-        completion_tokens: usage[:completion_tokens],
-        total_tokens: usage[:total_tokens]
+        prompt_tokens: usage[:prompt_tokens] || usage['prompt_tokens'],
+        completion_tokens: usage[:completion_tokens] || usage['completion_tokens'],
+        total_tokens: usage[:total_tokens] || usage['total_tokens']
       }
     end
 
@@ -205,7 +221,8 @@ module Langfuse
           metadata: @config[:metadata],
           version: @config[:version],
           release: @config[:release],
-          public_trace: @config[:public_trace]
+          public_trace: @config[:public_trace],
+          input: parsed_args[:input] # Set the input on the trace
         }.compact
 
         # Use existing trace or create new one
@@ -255,8 +272,14 @@ module Langfuse
             version: @config[:version]
           )
 
-          # Update the trace if not using a parent trace
-          trace.update(metadata: { output: output }) unless @config[:parent_trace]
+          # Update the trace with the output
+          unless @config[:parent_trace]
+            # Pass the raw output directly to ensure it's captured correctly
+            trace.update(
+              output: output,
+              metadata: @config[:metadata]
+            )
+          end
 
           response
 
@@ -276,6 +299,17 @@ module Langfuse
               error_type: e.class.name
             }
           )
+
+          # Update the trace with the error
+          unless @config[:parent_trace]
+            trace.update(
+              metadata: {
+                error: e.message,
+                error_type: e.class.name
+              },
+              output: nil # Explicitly set output to nil for error cases
+            )
+          end
 
           raise e
         end
