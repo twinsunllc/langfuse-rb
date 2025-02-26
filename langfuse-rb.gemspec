@@ -3,18 +3,18 @@ require_relative 'lib/langfuse/version'
 Gem::Specification.new do |spec|
   spec.name          = "langfuse-rb"
   spec.version       = Langfuse::VERSION
-  spec.authors       = ["Langfuse"]
-  spec.email         = ["info@langfuse.com"]
+  spec.authors       = ["Twin Sun, LLC", "Jami Couch"]
+  spec.email         = ["developers@twinsun.dev"]
 
-  spec.summary       = "Ruby client for Langfuse - the open source LLM engineering platform"
+  spec.summary       = "Unofficial Ruby client for Langfuse"
   spec.description   = "Langfuse Ruby client provides observability and tracing for LLM applications"
-  spec.homepage      = "https://github.com/langfuse/langfuse-rb"
+  spec.homepage      = "https://github.com/twinsunllc/langfuse-rb"
   spec.license       = "MIT"
   spec.required_ruby_version = Gem::Requirement.new(">= 2.6.0")
 
   spec.metadata["homepage_uri"] = spec.homepage
-  spec.metadata["source_code_uri"] = "https://github.com/langfuse/langfuse-rb"
-  spec.metadata["changelog_uri"] = "https://github.com/langfuse/langfuse-rb/blob/main/CHANGELOG.md"
+  spec.metadata["source_code_uri"] = "https://github.com/twinsunllc/langfuse-rb"
+  spec.metadata["changelog_uri"] = "https://github.com/twinsunllc/langfuse-rb/blob/main/CHANGELOG.md"
 
   # Specify which files should be added to the gem when it is released.
   spec.files = Dir.glob(%w[lib/**/*.rb README.md LICENSE])
