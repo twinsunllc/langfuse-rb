@@ -103,6 +103,20 @@ module Langfuse
       }
     end
 
+    # Helper to parse usage details in the new format
+    # @param response [Hash] OpenAI API response
+    # @return [Hash, nil] Usage details if available
+    def self.parse_usage_details(response)
+      return nil unless response.is_a?(Hash) && response.key?(:usage)
+
+      usage = response[:usage]
+      {
+        prompt_tokens: usage[:prompt_tokens],
+        completion_tokens: usage[:completion_tokens],
+        total_tokens: usage[:total_tokens]
+      }
+    end
+
     # Class representing a traced OpenAI client
     class TracedOpenAIClient
       # Initialize a new traced client
@@ -188,7 +202,10 @@ module Langfuse
           name: @config[:trace_name] || "OpenAI.#{method}",
           user_id: @config[:user_id],
           session_id: @config[:session_id],
-          metadata: @config[:metadata]
+          metadata: @config[:metadata],
+          version: @config[:version],
+          release: @config[:release],
+          public_trace: @config[:public_trace]
         }.compact
 
         # Use existing trace or create new one
@@ -219,8 +236,9 @@ module Langfuse
           # Parse the output and usage
           output = Langfuse::OpenAI.parse_completion_output(response)
           usage = Langfuse::OpenAI.parse_usage(response)
+          usage_details = Langfuse::OpenAI.parse_usage_details(response)
 
-          # Create a generation
+          # Create a generation with all the new fields
           trace.generation(
             name: generation_name,
             model: parsed_args[:model],
@@ -228,8 +246,13 @@ module Langfuse
             output: output,
             start_time: start_time,
             end_time: Time.now,
+            completion_start_time: nil, # OpenAI doesn't provide this
+            model_parameters: parsed_args[:model_parameters],
             usage: usage,
-            metadata: { parameters: parsed_args[:model_parameters] }
+            usage_details: usage_details,
+            level: @config[:level] || Langfuse::ObservationLevel::DEFAULT,
+            status_message: nil,
+            version: @config[:version]
           )
 
           # Update the trace if not using a parent trace
@@ -245,8 +268,10 @@ module Langfuse
             input: parsed_args[:input],
             start_time: start_time,
             end_time: Time.now,
+            model_parameters: parsed_args[:model_parameters],
+            level: Langfuse::ObservationLevel::ERROR,
+            status_message: e.message,
             metadata: {
-              parameters: parsed_args[:model_parameters],
               error: e.message,
               error_type: e.class.name
             }

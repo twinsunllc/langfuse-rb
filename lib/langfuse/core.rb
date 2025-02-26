@@ -7,7 +7,7 @@ module Langfuse
   # Helper method to format timestamps consistently throughout the library
   def self.format_timestamp(time)
     return Time.now.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ') if time.nil?
-    
+
     case time
     when Time
       time.utc.strftime('%Y-%m-%dT%H:%M:%S.%LZ')
@@ -17,6 +17,21 @@ module Langfuse
     else
       time.to_s
     end
+  end
+
+  # Observation types as defined in the API schema
+  module ObservationType
+    SPAN = "SPAN"
+    GENERATION = "GENERATION"
+    EVENT = "EVENT"
+  end
+
+  # Observation levels as defined in the API schema
+  module ObservationLevel
+    DEBUG = "DEBUG"
+    DEFAULT = "DEFAULT"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
   end
 
   class Core
@@ -65,21 +80,27 @@ module Langfuse
     # @param session_id [String] Optional session ID
     # @param metadata [Hash] Optional metadata
     # @param tags [Array] Optional tags
+    # @param version [String] Optional version
+    # @param release [String] Optional release
+    # @param public_trace [Boolean] Optional public flag
     # @return [Trace] A new trace object
-    def trace(name:, id: nil, user_id: nil, session_id: nil, metadata: nil, tags: nil)
+    def trace(name:, id: nil, user_id: nil, session_id: nil, metadata: nil, tags: nil, version: nil, release: nil, public_trace: nil)
       Trace.new(self, {
         id: id || SecureRandom.uuid,
         name: name,
-        user_id: user_id,
-        session_id: session_id,
+        userId: user_id,
+        sessionId: session_id,
         metadata: metadata,
         tags: tags,
+        version: version,
+        release: release,
+        public: public_trace,
         timestamp: Langfuse.format_timestamp(Time.now)
       })
     end
 
     # Add an event to the queue
-    # @param type [String] Type of event (e.g., 'trace', 'generation', 'span')
+    # @param type [String] Type of event (e.g., 'trace-create', 'generation-create', 'span-create')
     # @param body [Hash] Event data
     # @return [Boolean] Whether the event was queued
     def enqueue(type, body)
@@ -91,7 +112,8 @@ module Langfuse
       event = {
         id: SecureRandom.uuid,  # Add required id for the event itself
         type: type,
-        body: body
+        body: body,  # Body is now properly nested
+        timestamp: Langfuse.format_timestamp(Time.now)
       }
 
       @mutex.synchronize do
@@ -122,8 +144,9 @@ module Langfuse
           req.options.timeout = 10
         end
 
+        @options[:logger].debug("Langfuse: Request body: #{JSON.pretty_generate({ batch: events })}")
         @options[:logger].debug("Langfuse: Response status: #{response.status}")
-        @options[:logger].debug("Langfuse: Response body: #{response.body}")
+        @options[:logger].debug("Langfuse: Response body: #{JSON.pretty_generate(response.body)}")
 
         if response.success?
           @options[:logger].debug("Langfuse: Successfully sent #{events.size} events")
@@ -213,23 +236,45 @@ module Langfuse
     # @param name [String] Optional name for the generation
     # @param start_time [Time] Optional start time
     # @param end_time [Time] Optional end time
+    # @param completion_start_time [Time] Optional completion start time
+    # @param model_parameters [Hash] Optional model parameters
     # @param usage [Hash] Optional usage statistics
+    # @param usage_details [Hash] Optional detailed usage statistics
+    # @param cost_details [Hash] Optional cost details
     # @param metadata [Hash] Optional metadata
+    # @param level [String] Optional observation level
+    # @param status_message [String] Optional status message
+    # @param prompt_name [String] Optional prompt name
+    # @param prompt_version [Integer] Optional prompt version
+    # @param version [String] Optional version
     # @return [Generation] The created generation
-    def generation(model:, input:, output: nil, name: nil, start_time: nil, end_time: nil, usage: nil, metadata: nil)
+    def generation(model:, input:, output: nil, name: nil, start_time: nil, end_time: nil,
+                  completion_start_time: nil, model_parameters: nil, usage: nil,
+                  usage_details: nil, cost_details: nil, metadata: nil, level: nil,
+                  status_message: nil, prompt_name: nil, prompt_version: nil, version: nil)
       id = SecureRandom.uuid
 
       gen_data = {
         id: id,
-        trace_id: @id,
+        traceId: @id,
         name: name,
+        type: ObservationType::GENERATION,
         model: model,
         input: input,
         output: output,
-        start_time: Langfuse.format_timestamp(start_time),
-        end_time: end_time ? Langfuse.format_timestamp(end_time) : nil,
+        startTime: Langfuse.format_timestamp(start_time),
+        endTime: end_time ? Langfuse.format_timestamp(end_time) : nil,
+        completionStartTime: completion_start_time ? Langfuse.format_timestamp(completion_start_time) : nil,
+        modelParameters: model_parameters,
         usage: usage,
-        metadata: metadata
+        usageDetails: usage_details,
+        costDetails: cost_details,
+        metadata: metadata,
+        level: level,
+        statusMessage: status_message,
+        promptName: prompt_name,
+        promptVersion: prompt_version,
+        version: version
       }.compact
 
       @client.enqueue('generation-create', gen_data)
@@ -242,17 +287,29 @@ module Langfuse
     # @param start_time [Time] Optional start time
     # @param end_time [Time] Optional end time
     # @param metadata [Hash] Optional metadata
+    # @param input [Hash|String] Optional input data
+    # @param output [String|Hash] Optional output data
+    # @param level [String] Optional observation level
+    # @param status_message [String] Optional status message
+    # @param version [String] Optional version
     # @return [Span] The created span
-    def span(name:, start_time: nil, end_time: nil, metadata: nil)
+    def span(name:, start_time: nil, end_time: nil, metadata: nil, input: nil, output: nil,
+            level: nil, status_message: nil, version: nil)
       id = SecureRandom.uuid
 
       span_data = {
         id: id,
-        trace_id: @id,
+        traceId: @id,
         name: name,
-        start_time: Langfuse.format_timestamp(start_time),
-        end_time: end_time ? Langfuse.format_timestamp(end_time) : nil,
-        metadata: metadata
+        type: ObservationType::SPAN,
+        startTime: Langfuse.format_timestamp(start_time),
+        endTime: end_time ? Langfuse.format_timestamp(end_time) : nil,
+        metadata: metadata,
+        input: input,
+        output: output,
+        level: level,
+        statusMessage: status_message,
+        version: version
       }.compact
 
       @client.enqueue('span-create', span_data)
@@ -260,24 +317,62 @@ module Langfuse
       Span.new(@client, span_data)
     end
 
+    # Add an event to this trace
+    # @param name [String] Name of the event
+    # @param start_time [Time] Optional start time
+    # @param metadata [Hash] Optional metadata
+    # @param input [Hash|String] Optional input data
+    # @param output [String|Hash] Optional output data
+    # @param level [String] Optional observation level
+    # @param status_message [String] Optional status message
+    # @param version [String] Optional version
+    # @return [Event] The created event
+    def event(name:, start_time: nil, metadata: nil, input: nil, output: nil,
+             level: nil, status_message: nil, version: nil)
+      id = SecureRandom.uuid
+
+      event_data = {
+        id: id,
+        traceId: @id,
+        name: name,
+        type: ObservationType::EVENT,
+        startTime: Langfuse.format_timestamp(start_time),
+        metadata: metadata,
+        input: input,
+        output: output,
+        level: level,
+        statusMessage: status_message,
+        version: version
+      }.compact
+
+      @client.enqueue('observation-create', event_data)
+
+      Event.new(@client, event_data)
+    end
+
     # Update this trace
     # @param user_id [String] Optional user ID
     # @param session_id [String] Optional session ID
     # @param metadata [Hash] Optional metadata
     # @param tags [Array] Optional tags
+    # @param version [String] Optional version
+    # @param release [String] Optional release
+    # @param public_trace [Boolean] Optional public flag
     # @return [Trace] Self
-    def update(user_id: nil, session_id: nil, metadata: nil, tags: nil)
+    def update(user_id: nil, session_id: nil, metadata: nil, tags: nil, version: nil, release: nil, public_trace: nil)
       update_data = {
         id: @id,
-        user_id: user_id,
-        session_id: session_id,
+        userId: user_id,
+        sessionId: session_id,
         metadata: metadata,
-        tags: tags
+        tags: tags,
+        version: version,
+        release: release,
+        public: public_trace
       }.compact
 
       return self if update_data.keys.size <= 1 # Only id is present
 
-      # Uses trace-create for updates too, with just the fields that changed
       @client.enqueue('trace-create', update_data)
       @data.merge!(update_data)
 
@@ -296,22 +391,42 @@ module Langfuse
       @client = client
       @data = data
       @id = data[:id]
-      @trace_id = data[:trace_id]
+      @trace_id = data[:traceId]
     end
 
     # Update this generation
     # @param output [String|Hash] Optional output data
     # @param end_time [Time] Optional end time
+    # @param completion_start_time [Time] Optional completion start time
+    # @param model [String] Optional model name
+    # @param model_parameters [Hash] Optional model parameters
     # @param usage [Hash] Optional usage statistics
+    # @param usage_details [Hash] Optional detailed usage statistics
+    # @param cost_details [Hash] Optional cost details
     # @param metadata [Hash] Optional metadata
+    # @param level [String] Optional observation level
+    # @param status_message [String] Optional status message
+    # @param prompt_name [String] Optional prompt name
+    # @param prompt_version [Integer] Optional prompt version
     # @return [Generation] Self
-    def update(output: nil, end_time: nil, usage: nil, metadata: nil)
+    def update(output: nil, end_time: nil, completion_start_time: nil, model: nil,
+              model_parameters: nil, usage: nil, usage_details: nil, cost_details: nil,
+              metadata: nil, level: nil, status_message: nil, prompt_name: nil, prompt_version: nil)
       update_data = {
         id: @id,
         output: output,
-        end_time: Langfuse.format_timestamp(end_time || Time.now),
+        endTime: end_time ? Langfuse.format_timestamp(end_time) : nil,
+        completionStartTime: completion_start_time ? Langfuse.format_timestamp(completion_start_time) : nil,
+        model: model,
+        modelParameters: model_parameters,
         usage: usage,
-        metadata: metadata
+        usageDetails: usage_details,
+        costDetails: cost_details,
+        metadata: metadata,
+        level: level,
+        statusMessage: status_message,
+        promptName: prompt_name,
+        promptVersion: prompt_version
       }.compact
 
       return self if update_data.keys.size <= 1 # Only id is present
@@ -334,23 +449,71 @@ module Langfuse
       @client = client
       @data = data
       @id = data[:id]
-      @trace_id = data[:trace_id]
+      @trace_id = data[:traceId]
     end
 
     # Update this span
     # @param end_time [Time] Optional end time
     # @param metadata [Hash] Optional metadata
+    # @param input [Hash|String] Optional input data
+    # @param output [String|Hash] Optional output data
+    # @param level [String] Optional observation level
+    # @param status_message [String] Optional status message
     # @return [Span] Self
-    def update(end_time: nil, metadata: nil)
+    def update(end_time: nil, metadata: nil, input: nil, output: nil, level: nil, status_message: nil)
       update_data = {
         id: @id,
-        end_time: Langfuse.format_timestamp(end_time || Time.now),
-        metadata: metadata
+        endTime: end_time ? Langfuse.format_timestamp(end_time) : nil,
+        metadata: metadata,
+        input: input,
+        output: output,
+        level: level,
+        statusMessage: status_message
       }.compact
 
       return self if update_data.keys.size <= 1 # Only id is present
 
       @client.enqueue('span-update', update_data)
+      @data.merge!(update_data)
+
+      self
+    end
+  end
+
+  # Represents an event in Langfuse
+  class Event
+    attr_reader :id, :trace_id, :client, :data
+
+    # Initialize a new event
+    # @param client [Langfuse::Core] Langfuse client
+    # @param data [Hash] Event data
+    def initialize(client, data)
+      @client = client
+      @data = data
+      @id = data[:id]
+      @trace_id = data[:traceId]
+    end
+
+    # Update this event
+    # @param metadata [Hash] Optional metadata
+    # @param input [Hash|String] Optional input data
+    # @param output [String|Hash] Optional output data
+    # @param level [String] Optional observation level
+    # @param status_message [String] Optional status message
+    # @return [Event] Self
+    def update(metadata: nil, input: nil, output: nil, level: nil, status_message: nil)
+      update_data = {
+        id: @id,
+        metadata: metadata,
+        input: input,
+        output: output,
+        level: level,
+        statusMessage: status_message
+      }.compact
+
+      return self if update_data.keys.size <= 1 # Only id is present
+
+      @client.enqueue('observation-update', update_data)
       @data.merge!(update_data)
 
       self

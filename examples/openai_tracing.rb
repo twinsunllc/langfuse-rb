@@ -15,7 +15,10 @@ openai_client = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
 traced_client = Langfuse::OpenAI.observe(openai_client, {
   public_key: ENV['LANGFUSE_PUBLIC_KEY'],
   secret_key: ENV['LANGFUSE_SECRET_KEY'],
-  host: ENV['LANGFUSE_HOST'] || 'https://cloud.langfuse.com'
+  host: ENV['LANGFUSE_HOST'] || 'https://cloud.langfuse.com',
+  version: "1.0.0",
+  release: "2023-02-26",
+  level: Langfuse::ObservationLevel::DEFAULT
 })
 
 # Use the traced client - all calls will be automatically traced
@@ -34,12 +37,17 @@ puts "Response from OpenAI:"
 puts response.dig(:choices, 0, :message, :content)
 
 # Option 2: Use an existing trace
-trace = langfuse.trace(name: "Multi-step conversation")
+trace = langfuse.trace(
+  name: "Multi-step conversation",
+  version: "1.0.0",
+  public_trace: true
+)
 
 # Create a traced client that uses the parent trace
 traced_client2 = Langfuse::OpenAI.observe(openai_client, {
   parent_trace: trace,
-  generation_name: "Rails Follow-up Question"
+  generation_name: "Rails Follow-up Question",
+  level: Langfuse::ObservationLevel::DEFAULT
 })
 
 # Use the traced client with existing trace
@@ -58,6 +66,16 @@ response2 = traced_client2.chat(
 
 puts "\nFollow-up response:"
 puts response2.dig(:choices, 0, :message, :content)
+
+# Add a custom event to the trace
+trace.event(
+  name: "Conversation Completed",
+  level: Langfuse::ObservationLevel::INFO,
+  metadata: {
+    num_messages: 4,
+    total_tokens: response2.dig(:usage, :total_tokens)
+  }
+)
 
 # Make sure to flush before the program ends
 traced_client.flush_async
