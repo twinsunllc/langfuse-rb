@@ -1,4 +1,7 @@
 require 'langfuse'
+require 'dotenv'
+
+Dotenv.load
 
 # Initialize the Langfuse client
 langfuse = Langfuse.new(

@@ -1,5 +1,8 @@
 require 'langfuse'
 require 'openai'
+require 'dotenv'
+
+Dotenv.load
 
 # Initialize the Langfuse client directly (not required if using configuration in observe)
 langfuse = Langfuse.new(
@@ -34,14 +37,14 @@ traced_client = Langfuse::OpenAI.observe(openai_client, {
 # Use the traced client - all calls will be automatically traced
 response = traced_client.chat(
   parameters: {
-    model: "gpt-3.5-turbo",
+    model: "gpt-4o-mini",
     messages: first_query_input[:messages],
     temperature: 0.7
   }
 )
 
 puts "Response from OpenAI:"
-puts response.dig(:choices, 0, :message, :content)
+puts response.dig('choices', 0, 'message', 'content')
 
 # Option 2: Use an existing trace with explicit input/output
 trace = langfuse.trace(
@@ -56,7 +59,7 @@ follow_up_input = {
   messages: [
     { role: "system", content: "You are a helpful assistant." },
     { role: "user", content: "What is Ruby on Rails?" },
-    { role: "assistant", content: response.dig(:choices, 0, :message, :content) },
+    { role: "assistant", content: response.dig('choices', 0, 'message', 'content') },
     { role: "user", content: "What are the main components of Rails?" }
   ]
 }
@@ -71,20 +74,20 @@ traced_client2 = Langfuse::OpenAI.observe(openai_client, {
 # Use the traced client with existing trace
 response2 = traced_client2.chat(
   parameters: {
-    model: "gpt-3.5-turbo",
+    model: "gpt-4o-mini",
     messages: follow_up_input[:messages],
     temperature: 0.7
   }
 )
 
-follow_up_response = response2.dig(:choices, 0, :message, :content)
+follow_up_response = response2.dig('choices', 0, 'message', 'content')
 puts "\nFollow-up response:"
 puts follow_up_response
 
 # Update the trace with the final output
 trace.update(
   output: {
-    initial_response: response.dig(:choices, 0, :message, :content),
+    initial_response: response.dig('choices', 0, 'message', 'content'),
     follow_up_response: follow_up_response
   }
 )
@@ -95,7 +98,7 @@ trace.event(
   level: Langfuse::ObservationLevel::DEFAULT,
   metadata: {
     num_messages: follow_up_input[:messages].length,
-    total_tokens: response2.dig(:usage, :total_tokens)
+    total_tokens: response2.dig('usage', 'total_tokens')
   }
 )
 
