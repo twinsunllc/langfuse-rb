@@ -68,8 +68,21 @@ RSpec.describe Langfuse::Core do
     it "adds an event to the queue" do
       client.enqueue("trace", { id: "test-id", name: "Test" })
       expect(client.queue.size).to eq(1)
-      expect(client.queue[0][:type]).to eq("trace")
-      expect(client.queue[0][:body][:id]).to eq("test-id")
+
+      # Create a temporary array to hold the queue contents for testing
+      queue_contents = []
+      # Non-blocking pop to get the item without waiting
+      while (item = client.queue.pop(true) rescue nil)
+        queue_contents << item
+      end
+
+      # Verify the item we popped
+      expect(queue_contents.size).to eq(1)
+      expect(queue_contents[0][:type]).to eq("trace")
+      expect(queue_contents[0][:body][:id]).to eq("test-id")
+
+      # Re-add the items back to the queue for other tests
+      queue_contents.each { |item| client.queue.push(item) }
     end
 
     it "respects sample rate" do

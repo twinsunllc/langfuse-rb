@@ -133,7 +133,7 @@ RSpec.describe Langfuse::OpenAI do
       allow(mock_langfuse).to receive(:trace).and_return(mock_trace)
 
       # Set up the singleton
-      allow(Langfuse::OpenAI::LangfuseSingleton).to receive(:get_instance).and_return(mock_langfuse)
+      allow(Langfuse::OpenAI::LangfuseClientStore).to receive(:get_client).and_return(mock_langfuse)
 
       # Expect trace.update to be called with output parameter
       expect(mock_trace).to receive(:update).with(hash_including(
@@ -168,7 +168,7 @@ RSpec.describe Langfuse::OpenAI do
       allow(mock_langfuse).to receive(:trace).and_return(mock_trace)
 
       # Set up the singleton
-      allow(Langfuse::OpenAI::LangfuseSingleton).to receive(:get_instance).and_return(mock_langfuse)
+      allow(Langfuse::OpenAI::LangfuseClientStore).to receive(:get_client).and_return(mock_langfuse)
 
       # Expect trace.update to be called with output: nil and error in metadata
       expect(mock_trace).to receive(:update).with(hash_including(
@@ -185,6 +185,114 @@ RSpec.describe Langfuse::OpenAI do
       })
 
       expect { traced_client_with_auth.chat(parameters: params) }.to raise_error(StandardError)
+    end
+
+    it "automatically flushes after successful API call when auto_flush is enabled" do
+      params = { model: "gpt-3.5-turbo", messages: [{ role: "user", content: "Hello" }] }
+      response = {
+        choices: [{ message: { content: "Hi there!" } }],
+        usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 }
+      }
+
+      # Create a mock trace and generation
+      mock_trace = double("Langfuse::Trace")
+      mock_generation = double("Langfuse::Generation")
+
+      # Set up the mocks
+      allow(mock_trace).to receive(:generation).and_return(mock_generation)
+      allow(mock_trace).to receive(:update)
+
+      # Set up the Langfuse client mock
+      mock_langfuse = double("Langfuse::Core")
+      allow(mock_langfuse).to receive(:trace).and_return(mock_trace)
+
+      # Expect flush to be called
+      expect(mock_langfuse).to receive(:flush).once
+
+      # Set up the client store
+      allow(Langfuse::OpenAI::LangfuseClientStore).to receive(:get_client).and_return(mock_langfuse)
+
+      expect(mock_client).to receive(:chat).with(parameters: params).and_return(response)
+
+      # Configure the traced client with auth and auto_flush enabled
+      traced_client_with_auto_flush = Langfuse::OpenAI.observe(mock_client, {
+        public_key: "pk-test",
+        secret_key: "sk-test",
+        auto_flush: true
+      })
+
+      traced_client_with_auto_flush.chat(parameters: params)
+    end
+
+    it "automatically flushes after error when auto_flush is enabled" do
+      params = { model: "gpt-3.5-turbo", messages: [{ role: "user", content: "Hello" }] }
+      error = StandardError.new("API error")
+
+      # Create a mock trace and generation
+      mock_trace = double("Langfuse::Trace")
+      mock_generation = double("Langfuse::Generation")
+
+      # Set up the mocks
+      allow(mock_trace).to receive(:generation).and_return(mock_generation)
+      allow(mock_trace).to receive(:update)
+
+      # Set up the Langfuse client mock
+      mock_langfuse = double("Langfuse::Core")
+      allow(mock_langfuse).to receive(:trace).and_return(mock_trace)
+
+      # Expect flush to be called
+      expect(mock_langfuse).to receive(:flush).once
+
+      # Set up the client store
+      allow(Langfuse::OpenAI::LangfuseClientStore).to receive(:get_client).and_return(mock_langfuse)
+
+      expect(mock_client).to receive(:chat).with(parameters: params).and_raise(error)
+
+      # Configure the traced client with auth and auto_flush enabled
+      traced_client_with_auto_flush = Langfuse::OpenAI.observe(mock_client, {
+        public_key: "pk-test",
+        secret_key: "sk-test",
+        auto_flush: true
+      })
+
+      expect { traced_client_with_auto_flush.chat(parameters: params) }.to raise_error(StandardError)
+    end
+
+    it "does not flush automatically when auto_flush is disabled" do
+      params = { model: "gpt-3.5-turbo", messages: [{ role: "user", content: "Hello" }] }
+      response = {
+        choices: [{ message: { content: "Hi there!" } }],
+        usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 }
+      }
+
+      # Create a mock trace and generation
+      mock_trace = double("Langfuse::Trace")
+      mock_generation = double("Langfuse::Generation")
+
+      # Set up the mocks
+      allow(mock_trace).to receive(:generation).and_return(mock_generation)
+      allow(mock_trace).to receive(:update)
+
+      # Set up the Langfuse client mock
+      mock_langfuse = double("Langfuse::Core")
+      allow(mock_langfuse).to receive(:trace).and_return(mock_trace)
+
+      # Expect flush NOT to be called
+      expect(mock_langfuse).not_to receive(:flush)
+
+      # Set up the client store
+      allow(Langfuse::OpenAI::LangfuseClientStore).to receive(:get_client).and_return(mock_langfuse)
+
+      expect(mock_client).to receive(:chat).with(parameters: params).and_return(response)
+
+      # Configure the traced client with auth but auto_flush disabled (default)
+      traced_client_without_auto_flush = Langfuse::OpenAI.observe(mock_client, {
+        public_key: "pk-test",
+        secret_key: "sk-test",
+        auto_flush: false
+      })
+
+      traced_client_without_auto_flush.chat(parameters: params)
     end
 
     it "checks method existence on the original client" do

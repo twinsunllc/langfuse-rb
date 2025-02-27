@@ -2,6 +2,8 @@ require 'faraday'
 require 'json'
 require 'securerandom'
 require 'logger'
+require 'thread'
+require 'timeout'
 
 module Langfuse
   # Helper method to format timestamps consistently throughout the library
@@ -55,11 +57,12 @@ module Langfuse
         enabled: options.fetch(:enabled, true),
         sample_rate: options.fetch(:sample_rate, 1.0),
         additional_headers: options[:additional_headers] || {},
-        logger: options[:logger] || Logger.new($stdout)
+        logger: options[:logger] || Logger.new($stdout),
+        disable_background_flush: options.fetch(:disable_background_flush, false)
       }
 
-      @queue = []
-      @mutex = Mutex.new
+      # Use a thread-safe Queue
+      @queue = Queue.new
       @timer = nil
 
       @client = Faraday.new(url: @host) do |conn|
@@ -69,8 +72,8 @@ module Langfuse
         conn.adapter Faraday.default_adapter
       end
 
-      # Start the flush timer
-      start_flush_timer
+      # Start the flush timer unless disabled
+      start_flush_timer unless @options[:disable_background_flush]
     end
 
     # Create a new trace
@@ -121,10 +124,11 @@ module Langfuse
         timestamp: Langfuse.format_timestamp(Time.now)
       }
 
-      @mutex.synchronize do
-        @queue << event
-        flush if @queue.size >= @options[:flush_at]
-      end
+      # Add to the thread-safe queue
+      @queue.push(event)
+
+      # Check if we should flush based on queue size
+      flush if @queue.size >= @options[:flush_at]
 
       true
     end
@@ -132,12 +136,19 @@ module Langfuse
     # Flush the queue to the Langfuse API
     # @return [Boolean] Whether the flush was successful
     def flush
+      # Quick check if queue is empty
       return true if @queue.empty?
 
-      events = nil
-      @mutex.synchronize do
-        events = @queue.dup
-        @queue.clear
+      # Drain the queue into a local array
+      # This is thread-safe because Queue#pop is thread-safe
+      events = []
+      until @queue.empty?
+        begin
+          events << @queue.pop(true) # non-blocking pop
+        rescue ThreadError
+          # Queue is empty
+          break
+        end
       end
 
       return true if events.empty?
@@ -190,9 +201,16 @@ module Langfuse
       @timer = Thread.new do
         loop do
           sleep(@options[:flush_interval])
-          flush
+          begin
+            flush
+          rescue => e
+            @options[:logger].error("Langfuse: Error during timer flush: #{e.message}")
+          end
         end
       end
+
+      # Set thread as daemon so it doesn't prevent program exit
+      @timer.abort_on_exception = false
     end
 
     # Stop the flush timer
@@ -211,8 +229,10 @@ module Langfuse
     # Re-queue events after a failed request
     # @param events [Array] Events to re-queue
     def requeue_events(events)
-      @mutex.synchronize do
-        @queue.unshift(*events)
+      # Add events back to the queue
+      # This is thread-safe because Queue#push is thread-safe
+      events.each do |event|
+        @queue.push(event)
       end
     end
   end
