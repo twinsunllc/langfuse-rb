@@ -1,20 +1,28 @@
-require 'singleton'
 require 'openai'
 
 module Langfuse
   module OpenAI
-    # Singleton for managing Langfuse client
-    class LangfuseSingleton
-      include Singleton
+    # Thread-local storage for managing Langfuse clients
+    class LangfuseClientStore
+      # Thread-local variable to store clients
+      THREAD_KEY = :langfuse_client
 
-      attr_accessor :client
-
-      # Get or initialize the Langfuse client
+      # Get or initialize the Langfuse client for the current thread
       # @param options [Hash] Client initialization options
       # @return [Langfuse::Core] Langfuse client
-      def self.get_instance(options = {})
-        if instance.client.nil? && options.key?(:public_key) && options.key?(:secret_key)
-          instance.client = Langfuse.new(
+      def self.get_client(options = {})
+        # Get the thread-local hash of clients, or initialize it if it doesn't exist
+        thread_clients = Thread.current[THREAD_KEY] ||= {}
+
+        # Create a key based on the host to allow multiple clients with different hosts
+        client_key = options[:host] || 'https://cloud.langfuse.com'
+
+        # Return existing client if it exists for this host
+        return thread_clients[client_key] if thread_clients[client_key]
+
+        # Create a new client if we have the required credentials
+        if options.key?(:public_key) && options.key?(:secret_key)
+          thread_clients[client_key] = Langfuse.new(
             public_key: options[:public_key],
             secret_key: options[:secret_key],
             host: options[:host] || 'https://cloud.langfuse.com',
@@ -22,7 +30,13 @@ module Langfuse
           )
         end
 
-        instance.client
+        thread_clients[client_key]
+      end
+
+      # Clear all clients for the current thread
+      # Useful for cleaning up resources
+      def self.clear_clients
+        Thread.current[THREAD_KEY] = nil
       end
     end
 
@@ -144,7 +158,7 @@ module Langfuse
 
         # Initialize the Langfuse client if config is provided
         if config[:public_key] && config[:secret_key]
-          LangfuseSingleton.get_instance(config)
+          LangfuseClientStore.get_client(config)
         end
       end
 
@@ -281,6 +295,11 @@ module Langfuse
             )
           end
 
+          # Auto-flush after each call if enabled
+          if @config[:auto_flush]
+            langfuse_client.flush
+          end
+
           response
 
         rescue => e
@@ -311,6 +330,11 @@ module Langfuse
             )
           end
 
+          # Auto-flush errors too if enabled
+          if @config[:auto_flush]
+            langfuse_client.flush
+          end
+
           raise e
         end
       end
@@ -321,7 +345,7 @@ module Langfuse
         if @config[:parent]
           @config[:parent].client
         else
-          LangfuseSingleton.get_instance(@config)
+          LangfuseClientStore.get_client(@config)
         end
       end
     end
