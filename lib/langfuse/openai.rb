@@ -183,6 +183,13 @@ module Langfuse
         trace_method(:embeddings, { parameters: parameters })
       end
 
+      # Wrapper for moderations
+      # @param parameters [Hash] Method parameters
+      # @return [Hash] OpenAI API response
+      def moderations(parameters: {})
+        trace_method(:moderations, { parameters: parameters })
+      end
+
       # Flush the Langfuse client
       def flush_async
         langfuse_client = get_langfuse_client
@@ -221,7 +228,7 @@ module Langfuse
         # Create a trace if no parent specified
         langfuse_client = get_langfuse_client
         unless langfuse_client
-          if method == :chat || method == :completions || method == :embeddings
+          if method == :chat || method == :completions || method == :embeddings || method == :moderations
             return @client.public_send(method, parameters: args[:parameters])
           else
             return @client.public_send(method, args)
@@ -251,7 +258,7 @@ module Langfuse
 
         begin
           # Call the original OpenAI method, passing the parameters correctly
-          response = if method == :chat || method == :completions || method == :embeddings
+          response = if method == :chat || method == :completions || method == :embeddings || method == :moderations
             @client.public_send(method, parameters: args[:parameters])
           else
             @client.public_send(method, args)
